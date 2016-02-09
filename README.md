@@ -9,6 +9,7 @@ Go 1.6 is required due to some CGo fixes. The enchant development library is als
 ```go get github.com/coolbry95/edit```
 
 # Usage/Help
+must supply flags then wordlist.
 
 #### Thanks
 Steve Hatchett for the optimized levenshtien algorithm  
