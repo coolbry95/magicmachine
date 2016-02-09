@@ -5,7 +5,7 @@ MagicMachine generates rules based on a list of words. It reverses the words to 
 MagicMachine is licensed under the MIT license.
 
 # Installation
-Go 1.6 is required due to some CGo fixes
+Go 1.6 is required due to some CGo fixes. The enchant development library is also needed for a spell checker.  
 ```go get github.com/coolbry95/edit```
 
 # Usage/Help
