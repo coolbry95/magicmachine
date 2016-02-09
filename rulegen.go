@@ -23,7 +23,7 @@ import (
 )
 
 const usage = `
-usage shit here
+./magicmachine
 `
 
 var (
@@ -68,7 +68,7 @@ var (
 
 func main() {
 	// we do this so we can skip os.Args[1] which is the list of passwords
-	flags := flag.NewFlagSet("os.Args[0]", flag.ExitOnError)
+	flags := flag.NewFlagSet("magicmachine", flag.ExitOnError)
 
 	// rule generation finetuning
 	maxWordDist = flags.Int("maxwordist", 10, "max word distance")
