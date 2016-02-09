@@ -108,8 +108,6 @@ func main() {
 	// dictionary to use with special engine
 	specialDict = flags.String("specialdict", "", "special dict to use with special engine")
 
-	passwordFile = flags.String("passwordfile", "", "password file to analyze")
-
 	// when -h or -help is supplied
 	flag.ErrHelp = errors.New("help requested")
 	flag.Usage = func() {
@@ -118,6 +116,7 @@ func main() {
 	}
 
 	flags.Parse(os.Args[1:])
+
 	if len(*process) > 0 {
 		if len(*processOut) > 0 {
 			log.Println("Please specify out file")
