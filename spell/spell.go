@@ -86,9 +86,6 @@ func LoadSavedWordList(file io.Reader) *Model {
 
 // Replace is a wrapper to satisfy the Speller interface
 func (m *Model) Replace(mispelled, correct string) {
-	// just a wrapper to satisfy the Speller interface
-	// this method is based off of the aspell package replace
-	// just trying to adhere to that
 	m.CreateEntry(correct)
 }
 
