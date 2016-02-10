@@ -22,10 +22,6 @@ import (
 	"github.com/coolbry95/passutils/ruleprocessor/rules"
 )
 
-const usage = `
-./magicmachine
-`
-
 var (
 	// word generation tuning
 	maxWordDist *int
@@ -111,7 +107,6 @@ func main() {
 	// when -h or -help is supplied
 	flag.ErrHelp = errors.New("help requested")
 	flag.Usage = func() {
-		log.Println(usage)
 		flags.PrintDefaults()
 	}
 
@@ -148,7 +143,7 @@ func main() {
 			os.Exit(-1)
 		}
 	} else {
-		fmt.Println("no password file specified")
+		log.Println("no password file specified")
 		os.Exit(-1)
 	}
 
@@ -201,7 +196,7 @@ func main() {
 			}()
 			wg.Add(1)
 		}
-	} else if *engine == "enchant" || *engine != "enchant" {
+	} else {
 		for i := 0; i < *threads; i++ {
 			go func() {
 
@@ -226,8 +221,7 @@ func main() {
 
 	quit := make(chan struct{})
 	var counter uint
-	//ticker := time.Tick(time.Second * 5)
-	ticker := time.Tick(time.Second)
+	ticker := time.Tick(time.Second * 5)
 	start := time.Now()
 
 	go func() {
@@ -236,7 +230,7 @@ func main() {
 			case <-ticker:
 				elapsed := uint(time.Since(start).Seconds())
 				if elapsed > 0 {
-					fmt.Printf("\033[2K passwords processed %d; duration: %v; %d pass/s\r", counter, time.Since(start), counter/elapsed)
+					fmt.Printf("\033[2Kpasswords processed %d; duration: %v; %d pass/s\r", counter, time.Since(start), counter/elapsed)
 				}
 			case <-quit:
 				break
@@ -253,7 +247,6 @@ func main() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Println("problem with scanner")
 		log.Println(err.Error())
 	}
 

@@ -11,7 +11,7 @@ For Ubuntu
 go install github.com/coolbry95/magicmachine```
 
 # Usage/Help
-must supply flags then wordlist.
+Must supply flags then wordlist or wordlist then flags. This is due to a limitation in the flag library.
 
 #### Thanks
 Steve Hatchett for the optimized levenshtien algorithm  
