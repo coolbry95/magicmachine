@@ -6,7 +6,9 @@ MagicMachine is licensed under the MIT license.
 
 # Installation
 Go 1.6 is required due to some CGo fixes. The enchant development library is also needed for a spell checker.  
-```go install github.com/coolbry95/magicmachine```
+For Ubuntu
+```sudo apt-get install libenchant-dev
+go install github.com/coolbry95/magicmachine```
 
 # Usage/Help
 must supply flags then wordlist.
