@@ -92,7 +92,7 @@ func main() {
 	quiet = flags.Bool("quiet", false, "quiet")
 
 	// engine to use
-	engine = flags.String("engine", "aspell", "engine to use defaults to aspell, this is experimental may not provide good results")
+	engine = flags.String("engine", "enchant", "engine to use defaults to aspell, this is experimental may not provide good results")
 
 	// process dictionary with special engine
 	process = flags.String("process", "", "process a dicitonary to save time later")
