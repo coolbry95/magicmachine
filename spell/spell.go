@@ -3,12 +3,9 @@ package spell
 
 import (
 	"bufio"
+	"encoding/gob"
 	"fmt"
 	"io"
-	"sync"
-	"encoding/gob"
-
-	"github.com/coolbry95/magicmachine/util"
 )
 
 // Speller provides a basic interface for spell checking
@@ -36,7 +33,6 @@ type Model struct {
 	// dont really know what this is used for
 	// 224 symspell.cs ??
 	Max int `json:"max"`
-	m   sync.Mutex
 }
 
 // NewModel returns a Model with default parameters
@@ -66,12 +62,10 @@ func (m *Model) LoadWordList(file io.Reader) {
 
 // SaveWordList saves a wordlist to disc
 func (m *Model) SaveWordList(file io.Writer) {
-	m.m.Lock()
 	err := gob.NewEncoder(file).Encode(m)
 	if err != nil {
 		fmt.Println(err)
 	}
-	m.m.Unlock()
 }
 
 // LoadSavedWordList loads a wordlist that is saved on disc
@@ -92,10 +86,7 @@ func (m *Model) Replace(mispelled, correct string) {
 // CreateEntry adds an entry to the model
 func (m *Model) CreateEntry(word string) {
 	// make this non exported?
-	m.m.Lock()
 	if v, ok := m.Data[word]; ok {
-		// this works becuase v is a pointer
-		// eg it points to that point in memory its not a value
 		v.Count++
 	} else {
 		// can probably guess the size of suggestions based on length
@@ -110,17 +101,13 @@ func (m *Model) CreateEntry(word string) {
 
 	// how many times how we seen this term
 	if m.Data[word].Count == m.Threshold {
-		m.m.Unlock()
 		// create suggestions here
 		m.createSuggestions(word)
-	} else {
-		m.m.Unlock()
 	}
 }
 
 // this needs to uniq the values returned
 func (m *Model) createSuggestions(word string) {
-	m.m.Lock()
 	// get all of the edits
 	edits := Edits([]rune(word), 0, m.Depth)
 
@@ -131,7 +118,6 @@ func (m *Model) createSuggestions(word string) {
 		m.Data[val] = &Term{1, make([]string, 0)}
 		m.Data[val].Suggestions = append(m.Data[val].Suggestions, word)
 	}
-	m.m.Unlock()
 
 	//m.Data[word].Suggestions = append(m.Data[word].Suggestions, edits...)
 }
@@ -200,16 +186,15 @@ func (m *Model) Suggest(word string) []string {
 
 // Suggestion checks the spelling of a word
 func (m *Model) Suggestion(word string, editDistanceMax int) []string {
-// and sort based on likelyness
-// change suggestions to a *Term will have to change slicing operations
-	m.m.Lock()
+	// and sort based on likelyness
+	// change suggestions to a *Term will have to change slicing operations
 	wordRune := []rune(word)
 	if len(wordRune)-editDistanceMax > m.Max {
 		return []string{}
 	}
 
-	hashset1 := util.NewHash()
-	hashset2 := util.NewHash()
+	hashset1 := NewHash()
+	hashset2 := NewHash()
 
 	candidates := []string{}
 	candidates = append(candidates, word)
@@ -299,7 +284,6 @@ func (m *Model) Suggestion(word string, editDistanceMax int) []string {
 			}
 		}
 	}
-	m.m.Unlock()
 
 	temp := []string{}
 	a := make(map[string]struct{})

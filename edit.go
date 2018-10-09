@@ -104,6 +104,7 @@ func min(a, b int) int {
 
 // Edit computes the levenshtein edit distance but fills an array as it goes
 func Edit(a, b []rune) [][]int {
+	// recursion memoization?
 
 	// this maks a slice like [[][][]]
 	// that can hold len(a) []

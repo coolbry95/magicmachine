@@ -18,8 +18,9 @@ import (
 
 	"github.com/coolbry95/magicmachine/enchant"
 	"github.com/coolbry95/magicmachine/spell"
-	"github.com/coolbry95/magicmachine/util"
 	"github.com/coolbry95/passutils/ruleprocessor/rules"
+
+	"github.com/pkg/profile"
 )
 
 var (
@@ -63,6 +64,7 @@ var (
 )
 
 func main() {
+	defer profile.Start().Stop()
 	// we do this so we can skip os.Args[1] which is the list of passwords
 	flags := flag.NewFlagSet("magicmachine", flag.ExitOnError)
 
@@ -164,6 +166,9 @@ func main() {
 	var wg sync.WaitGroup
 
 	if *engine == "special" {
+		// I wonder what the performance/memory difference is
+		// is if we use a Copy method and make *threads models?
+		// right now it is goroutine safe
 		m := spell.NewModel()
 		if len(*processed) > 0 {
 			dict, err := os.Open(*processed)
@@ -247,7 +252,7 @@ func main() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Println(err.Error())
+		log.Println(err)
 	}
 
 	close(quit)
@@ -276,28 +281,28 @@ func printRules(wordFileName, ruleFileName string, words chan []Word) {
 		if os.IsExist(err) {
 			err = os.Remove(wordFileName)
 			if err != nil {
-				log.Println(err.Error())
+				log.Println(err)
 			}
 
 		}
 	}
 	wordFile, err := os.Create(wordFileName)
 	if err != nil {
-		log.Println("cannot open file to write to:" + err.Error())
+		log.Println("cannot open file to write to:", err)
 	}
 
 	if _, err := os.Stat(ruleFileName); err != nil {
 		if os.IsExist(err) {
 			err = os.Remove(ruleFileName)
 			if err != nil {
-				log.Println(err.Error())
+				log.Println(err)
 			}
 
 		}
 	}
 	ruleFile, err = os.Create(ruleFileName)
 	if err != nil {
-		log.Println("cannot open file to write to:" + err.Error())
+		log.Println("cannot open file to write to:", err)
 	}
 
 	defer wordFile.Close()
@@ -386,7 +391,9 @@ func generateHashcatRules(suggestion, password string) [][]string {
 		}
 
 		if hashcatRule == nil {
-			log.Printf("processing failed")
+			if *quiet {
+				log.Printf("processing failed")
+			}
 		} else {
 			hashcatRules = append(hashcatRules, hashcatRule)
 		}
@@ -465,10 +472,10 @@ func generateWords(password string, m spell.Speller) []Word {
 			suggestions = generateAdvancedWords(prePassword, m)
 		}
 
-		hashset1 := util.NewHash()
+		hashset1 := make(map[string]struct{})
 
 		for _, val := range suggestions {
-			hashset1.Add(val)
+			hashset1[val] = struct{}{}
 		}
 
 		// rules for each of the suggestions
@@ -476,16 +483,16 @@ func generateWords(password string, m spell.Speller) []Word {
 			suggestion = strings.Replace(suggestion, " ", "", -1)
 			suggestion = strings.Replace(suggestion, "-", "", -1)
 
-			if !hashset1.Exists(suggestion) {
+			if _, ok := hashset1[suggestion]; !ok {
 				suggestions = append(suggestions, suggestion)
-				hashset1.Add(suggestion)
+				hashset1[suggestion] = struct{}{}
 			}
 		}
 
 		/*
 			// TODO what is the point of this??
 			// debugging??
-			if len(suggestions) != hashset1.Len() {
+			if len(suggestions) != len(hashset1) {
 				// make these sorted
 				//fmt.Println(suggestions)
 				//fmt.Println(hashset1)
@@ -889,7 +896,9 @@ func AdvancedHashcatRules(passwordString, wordString string, perations []EditOp)
 		return needNewName
 	}
 
-	log.Printf("advanced processing failed: P: %s, M: %s, O: %s, %v\n", passwordString, string(wordRules), wordString, needNewName)
+	if *quiet {
+		log.Printf("advanced processing failed: P: %s, M: %s, O: %s, %v\n", passwordString, string(wordRules), wordString, needNewName)
+	}
 	return nil
 }
 
