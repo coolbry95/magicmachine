@@ -1,4 +1,3 @@
-// rulegen reverses passwords to source words
 package main
 
 import (
@@ -12,16 +11,23 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 	"unicode"
 
-	"github.com/coolbry95/magicmachine/enchant"
-	"github.com/coolbry95/magicmachine/spell"
-	"github.com/coolbry95/passutils/ruleprocessor/rules"
+	"time"
 
-	"github.com/pkg/profile"
+	"sync"
+
+	"github.com/coolbry95/edit/aspell"
+	"github.com/coolbry95/edit/enchant"
+	"github.com/coolbry95/edit/spell"
+	"github.com/coolbry95/edit/util"
+	"github.com/coolbry95/passutils/ruleprocessor/rules"
+	//"github.com/pkg/profile"
 )
+
+const usage = `
+usage shit here
+`
 
 var (
 	// word generation tuning
@@ -30,7 +36,7 @@ var (
 	moreWords   *bool
 	simpleWords *bool
 
-	// rule generation finetuning
+	// Finetuning rule generation
 	maxRuleLen  *int
 	maxRules    *int
 	moreRules   *bool
@@ -51,24 +57,16 @@ var (
 
 	// engine to use
 	engine *string
-
-	// process dictionary with special engine
-	process    *string
-	processOut *string
-
-	// use already processed dictionary with special engine
-	processed *string
-
-	// diction
-	specialDict *string
 )
 
 func main() {
-	defer profile.Start().Stop()
-	// we do this so we can skip os.Args[1] which is the list of passwords
-	flags := flag.NewFlagSet("magicmachine", flag.ExitOnError)
+	//defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()
+	//defer profile.Start(profile.MemProfile, profile.ProfilePath(".")).Stop()
 
-	// rule generation finetuning
+	// we do this so we can skip os.Args[1] which is the list of passwords
+	flags := flag.NewFlagSet("os.Args[0]", flag.ExitOnError)
+
+	// Finetuning word generation
 	maxWordDist = flags.Int("maxwordist", 10, "max word distance")
 	maxWords = flags.Int("maxwords", 5, "max words")
 	moreWords = flags.Bool("morewords", false, "more words")
@@ -80,76 +78,48 @@ func main() {
 	// out file basename
 	basename = flags.String("basename", "analysis", "basename for out files")
 
-	// word generation finetuning
+	// Finetuning rule generation
 	maxRuleLen = flags.Int("maxrulelen", 15, "max rule length")
 	maxRules = flags.Int("maxrules", 5, "max rules")
 	moreRules = flags.Bool("morerules", false, "more rules")
 	simpleRules = flags.Bool("simplerules", false, "simple rules")
 	bruteRules = flags.Bool("bruterules", false, "brute rules")
 
-	// debugging
+	// Debugging options
 	verbose = flags.Bool("verbose", false, "verbose")
 	debug = flags.Bool("debug", false, "debug")
-	wordDebug = flags.String("word", "", "force word to use")
+	wordDebug = flags.String("word", "", "force word to use") // Custom word to use.
 	quiet = flags.Bool("quiet", false, "quiet")
 
 	// engine to use
-	engine = flags.String("engine", "enchant", "engine to use defaults to aspell, this is experimental may not provide good results")
+	engine = flags.String("engine", "aspell", "engine to use defaults to aspell, this is experimental may not provide good results")
 
-	// process dictionary with special engine
-	process = flags.String("process", "", "process a dicitonary to save time later")
-	processOut = flags.String("processout", "", "where to save the processed dictionary")
-
-	// use already processed dictionary with special engine
-	processed = flags.String("processed", "", "processed dictionary to use")
-
-	// dictionary to use with special engine
-	specialDict = flags.String("specialdict", "", "special dict to use with special engine")
+	// make sure they have a file specified
+	if len(os.Args) <= 1 {
+		// usage
+		// os.args[0] file ...
+		fmt.Println("not enough arguments")
+		os.Exit(-1)
+	}
 
 	// when -h or -help is supplied
 	flag.ErrHelp = errors.New("help requested")
 	flag.Usage = func() {
+		log.Println(usage)
 		flags.PrintDefaults()
 	}
+	flags.Parse(os.Args[2:])
 
-	flags.Parse(os.Args[1:])
-
-	if len(*process) > 0 {
-		if len(*processOut) > 0 {
-			log.Println("Please specify out file")
-			os.Exit(-1)
-		}
-		wordlist, err := os.Open(*process)
-		if err != nil {
-			log.Println(err)
-		}
-		defer wordlist.Close()
-
-		saved, err := os.Create(*processOut)
-		if err != nil {
-			log.Println(err)
-		}
-
-		m := spell.NewModel()
-		m.LoadWordList(wordlist)
-		m.SaveWordList(saved)
-		saved.Close()
-		return
-	} else if len(flags.Args()) >= 1 {
-		if info, err := os.Stat(flags.Args()[0]); info.IsDir() {
-			log.Println("Cannot use directory")
-			os.Exit(-1)
-		} else if err != nil {
-			log.Println("could not open file for reading")
-			log.Println(err.Error())
-			os.Exit(-1)
-		}
-	} else {
-		log.Println("no password file specified")
+	if info, err := os.Stat(os.Args[1]); info.IsDir() {
+		log.Println("Cannot use directory")
+		os.Exit(-1)
+	} else if err != nil {
+		log.Println("could not open file for reading")
+		log.Println(err.Error())
 		os.Exit(-1)
 	}
 
-	passwords, err := os.Open(flags.Args()[0])
+	passwords, err := os.Open(os.Args[1])
 	if err != nil {
 		log.Println(err)
 		return
@@ -163,37 +133,20 @@ func main() {
 	// words is the channel to send completed passwords down
 	words := make(chan []Word, *threads)
 
+	// dont quite know if this is needed
+	// but we have it here incase
 	var wg sync.WaitGroup
 
 	if *engine == "special" {
-		// I wonder what the performance/memory difference is
-		// is if we use a Copy method and make *threads models?
-		// right now it is goroutine safe
-		m := spell.NewModel()
-		if len(*processed) > 0 {
-			dict, err := os.Open(*processed)
-			if err != nil {
-				log.Println(err)
-				os.Exit(-1)
-			}
-			m = spell.LoadSavedWordList(dict)
-		} else if len(*specialDict) > 0 {
-			wordlist, err := os.Open(*specialDict)
-			if err != nil {
-				log.Println(err)
-				os.Exit(-1)
-			}
-
-			m = spell.NewModel()
-			m.LoadWordList(wordlist)
-			wordlist.Close()
-		} else {
-			log.Println("no dictionary provided")
-			os.Exit(-1)
-		}
-
+		// need an option for saving this dictionary since it takes so damn long
 		for i := 0; i < *threads; i++ {
+			aspellDict, err := os.Open("./savedtest")
+			if err != nil {
+				fmt.Println(err)
+			}
+			m := spell.LoadSavedWordList(aspellDict)
 			go func() {
+
 				for pass := range p {
 					analyzePassword(pass, m, words)
 				}
@@ -201,7 +154,7 @@ func main() {
 			}()
 			wg.Add(1)
 		}
-	} else {
+	} else if *engine == "enchant" {
 		for i := 0; i < *threads; i++ {
 			go func() {
 
@@ -221,12 +174,34 @@ func main() {
 			}()
 			wg.Add(1)
 		}
+	} else if *engine == "aspell" {
+		for i := 0; i < *threads; i++ {
+			go func() {
+
+				opts := map[string]string{
+					"lang": "en", // American English
+				}
+				m, err := aspell.NewAspeller(opts)
+				if err != nil {
+					log.Println("Aspell error: " + err.Error())
+				}
+				defer m.Delete()
+
+				for pass := range p {
+					analyzePassword(pass, m, words)
+				}
+				wg.Done()
+			}()
+			wg.Add(1)
+		}
+
 	}
 	go printRules(*basename+".word", *basename+".rule", words)
 
 	quit := make(chan struct{})
 	var counter uint
-	ticker := time.Tick(time.Second * 5)
+	//ticker := time.Tick(time.Second * 5)
+	ticker := time.Tick(time.Second)
 	start := time.Now()
 
 	go func() {
@@ -235,7 +210,7 @@ func main() {
 			case <-ticker:
 				elapsed := uint(time.Since(start).Seconds())
 				if elapsed > 0 {
-					fmt.Printf("\033[2Kpasswords processed %d; duration: %v; %d pass/s\r", counter, time.Since(start), counter/elapsed)
+					fmt.Printf("\033[2K passwords processed %d; duration: %v; %d pass/s\r", counter, time.Since(start), counter/elapsed)
 				}
 			case <-quit:
 				break
@@ -252,16 +227,14 @@ func main() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Println(err)
+		log.Println("problem with scanner")
+		log.Println(err.Error())
 	}
 
 	close(quit)
 	close(p)
 	wg.Wait()
 	close(words)
-
-	// this makes the terminal line go back to normal
-	fmt.Println()
 
 }
 
@@ -277,32 +250,33 @@ func printRules(wordFileName, ruleFileName string, words chan []Word) {
 	// os.create will just overwrite the file
 
 	// we remove the old files so we can write the new contents
+	// we could also truncate and seek back to the beginning
 	if _, err := os.Stat(wordFileName); err != nil {
 		if os.IsExist(err) {
 			err = os.Remove(wordFileName)
 			if err != nil {
-				log.Println(err)
+				log.Println(err.Error())
 			}
 
 		}
 	}
 	wordFile, err := os.Create(wordFileName)
 	if err != nil {
-		log.Println("cannot open file to write to:", err)
+		log.Println("cannot open file to write to:" + err.Error())
 	}
 
 	if _, err := os.Stat(ruleFileName); err != nil {
 		if os.IsExist(err) {
 			err = os.Remove(ruleFileName)
 			if err != nil {
-				log.Println(err)
+				log.Println(err.Error())
 			}
 
 		}
 	}
 	ruleFile, err = os.Create(ruleFileName)
 	if err != nil {
-		log.Println("cannot open file to write to:", err)
+		log.Println("cannot open file to write to:" + err.Error())
 	}
 
 	defer wordFile.Close()
@@ -311,11 +285,16 @@ func printRules(wordFileName, ruleFileName string, words chan []Word) {
 	wordbuf := bufio.NewWriter(wordFile)
 	rulebuf := bufio.NewWriter(ruleFile)
 
+	/*
+		wordfile, _ := os.Open(os.DevNull)
+		wordbuf := bufio.NewWriter(wordFile)
+		rulebuf := bufio.NewWriter(os.Stdout)
+	*/
 	for word := range words {
 		for _, a := range word {
+			//fmt.Println(a.hashcatRules.String())
 			fmt.Fprintln(wordbuf, a.suggestion)
 			fmt.Fprintf(rulebuf, "%v", a.hashcatRules)
-			// pre mature optimization? does this auto flush?
 			// try to flush right before the buffer gets filled
 			if wordbuf.Buffered() >= 4000 {
 				wordbuf.Flush()
@@ -330,12 +309,12 @@ func printRules(wordFileName, ruleFileName string, words chan []Word) {
 	wordbuf.Flush()
 }
 
-// analyzePassword analyzing a single password
 func analyzePassword(password string, m spell.Speller, out chan []Word) {
+	// Analyze a single password.
 
 	var words []Word
 
-	// if we are debugging then don't generateWords
+	// Short-cut words in the dictionary
 	if len(*wordDebug) > 0 && len(m.Suggest(password)) > 0 {
 		var temp Word
 		temp.password = password
@@ -345,12 +324,14 @@ func analyzePassword(password string, m spell.Speller, out chan []Word) {
 
 		temp.hashcatRules = generateHashcatRules(temp.suggestion, temp.password)
 	} else {
+		// Generate rules for words not in the dictionary
 
-		// generate words based on the password
+		// Generate source words list
 		words = generateWords(password, m)
 
+		// Generate levenshtein reverse paths for each suggestion
 		for i, word := range words {
-			// generate a list of hashcat rules for each suggestion
+			// Generate a collection of hashcatRules lists
 			words[i].hashcatRules = generateHashcatRules(word.suggestion, word.password)
 		}
 	}
@@ -376,13 +357,14 @@ func (r rule) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 func (r rule) Less(i, j int) bool { return len(r[i]) < len(r[j]) }
 
 func generateHashcatRules(suggestion, password string) [][]string {
+	//Generate hashcat rules. Returns a length sorted list of lists of hashcat rules
 	levRules := GenerateLevenshteinRules([]rune(suggestion), []rune(password))
 
 	var hashcatRules rule
 	var hashcatRulesCollection rule
 
 	var hashcatRule []string
-	// generate a hashcat rule for each word
+	// Generate hashcat rule for each levenshtein rule
 	for _, levRule := range levRules {
 
 		if *simpleRules {
@@ -392,9 +374,7 @@ func generateHashcatRules(suggestion, password string) [][]string {
 		}
 
 		if hashcatRule == nil {
-			if *quiet {
-				log.Printf("processing failed")
-			}
+			log.Printf("processing failed: %s => %s\n", suggestion, password)
 		} else {
 			hashcatRules = append(hashcatRules, hashcatRule)
 		}
@@ -402,7 +382,7 @@ func generateHashcatRules(suggestion, password string) [][]string {
 
 	bestFoundRuleLength := 9999
 
-	// perform some optimization
+	// Perform Optimization
 	sort.Sort(rule(hashcatRules))
 	for _, hashcatRule := range hashcatRules {
 
@@ -414,7 +394,8 @@ func generateHashcatRules(suggestion, password string) [][]string {
 
 			} else if ruleLength > bestFoundRuleLength {
 				if *debug {
-					log.Printf("best rule length exceeded")
+					fmt.Printf("%s => {best rule length exceeded: rule length %d best found %d} => %s\n",
+						suggestion, ruleLength, bestFoundRuleLength, password)
 				}
 				break
 			}
@@ -450,7 +431,9 @@ func generateWords(password string, m spell.Speller) []Word {
 	var words []Word
 	var wordsCollection []Word
 
-	// collect best edit distance
+	// Let's collect best distance as soon as possible to prevent
+	// less efficient preRules like reversal and rotation from slowing
+	// us down with garbage
 	bestFoundDistance := 9999
 
 	preanalysisRules := []string{":", "r"}
@@ -473,32 +456,31 @@ func generateWords(password string, m spell.Speller) []Word {
 			suggestions = generateAdvancedWords(prePassword, m)
 		}
 
-		hashset1 := make(map[string]struct{})
+		hashset1 := util.NewHash()
 
 		for _, val := range suggestions {
-			hashset1[val] = struct{}{}
+			hashset1.Add(val)
 		}
 
+		// HACK: Perform some additional expansion on multi-word suggestions
+		// TODO: May be I should split these two and see if I can generate
 		// rules for each of the suggestions
 		for _, suggestion := range suggestions {
 			suggestion = strings.Replace(suggestion, " ", "", -1)
 			suggestion = strings.Replace(suggestion, "-", "", -1)
 
-			if _, ok := hashset1[suggestion]; !ok {
+			if !hashset1.Exists(suggestion) {
 				suggestions = append(suggestions, suggestion)
-				hashset1[suggestion] = struct{}{}
+				hashset1.Add(suggestion)
 			}
 		}
 
-		/*
-			// TODO what is the point of this??
-			// debugging??
-			if len(suggestions) != len(hashset1) {
-				// make these sorted
-				//fmt.Println(suggestions)
-				//fmt.Println(hashset1)
-			}
-		*/
+		// TODO what is the point of this??
+		if len(suggestions) != hashset1.Len() {
+			// make these sorted
+			//fmt.Println(suggestions)
+			//fmt.Println(hashset1)
+		}
 
 		for _, suggestion := range suggestions {
 			distance := Levenshtein(suggestion, prePassword)
@@ -524,17 +506,17 @@ func generateWords(password string, m spell.Speller) []Word {
 			}
 		} else if word.distance > bestFoundDistance {
 			if *debug {
-				log.Println("best found distance suboptimal")
+				fmt.Println("best found distance suboptimal")
 			}
 			break
 		}
 
-		// filter words with large edit distance
+		// Filter words with too big distance
 		if word.distance <= *maxWordDist {
 			wordsCollection = append(wordsCollection, word)
 		} else {
 			if *debug {
-				log.Println("max distance exceeded")
+				fmt.Println("max distance exceeded")
 			}
 		}
 	}
@@ -854,6 +836,7 @@ func AdvancedHashcatRules(passwordString, wordString string, perations []EditOp)
 
 	// Truncate left rules
 	lastPrecut := 0
+	//var precutRules []string
 	for i, hashcatRule := range needNewName {
 		if hashcatRule[0] == 'D' && rules.ToNumByte(hashcatRule[1]) == lastPrecut {
 			needNewName[i] = "["
@@ -864,6 +847,7 @@ func AdvancedHashcatRules(passwordString, wordString string, perations []EditOp)
 
 	// Truncate right rules
 	lastPostcut := len(password)
+	//var postcutRules []string
 	for i, hashcatRule := range needNewName {
 		if hashcatRule[0] == 'D' && rules.ToNumByte(hashcatRule[1]) >= lastPostcut {
 			needNewName[i] = "]"
@@ -897,15 +881,13 @@ func AdvancedHashcatRules(passwordString, wordString string, perations []EditOp)
 		return needNewName
 	}
 
-	if *quiet {
-		log.Printf("advanced processing failed: P: %s, M: %s, O: %s, %v\n", passwordString, string(wordRules), wordString, needNewName)
-	}
+	fmt.Printf("advanced processing failed: P: %s, M: %s, O: %s, %v\n", passwordString, string(wordRules), wordString, needNewName)
 	return nil
 }
 
 func checkReversiblePassword(password []rune) bool {
-	// check if a password is likely to be reversed
-	// skip numeric passwords
+	// Check whether the password is likely to be reversed successfuly.
+	// Skip all numeric passwords
 	d := 0
 	for _, r := range password {
 		if unicode.IsDigit(r) {
@@ -916,8 +898,8 @@ func checkReversiblePassword(password []rune) bool {
 		return false
 	}
 
-	// skip with less than 25% alpha
-	// TODO based on entropy?
+	// Skip passwords with less than 25% of alpha character
+	// TODO: Make random word detection more reliable based on word entropy.
 	d = 0
 	for _, r := range password {
 		if unicode.IsLetter(r) {
